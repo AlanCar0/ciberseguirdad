@@ -1,0 +1,4 @@
+﻿Flask==2.0.1
+mysql-connector-python==8.0.29
+psycopg2-binary==2.9.3
+requests==2.27.1
