@@ -2,7 +2,7 @@ pipeline {
     agent {
         docker {
             image 'python:3.10'
-            args '-u root:root'   // Para poder usar Docker dentro
+            args '-u root:root'
         }
     }
 
@@ -63,7 +63,14 @@ pipeline {
             }
             post {
                 always {
-                    publishHTML([reportDir: '', reportFiles: 'dependency-check-report.html', reportName: 'Reporte SCA'])
+                    publishHTML([
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '',
+                        reportFiles: 'dependency-check-report.html',
+                        reportName: 'Reporte SCA'
+                    ])
                 }
             }
         }
@@ -87,7 +94,14 @@ pipeline {
             }
             post {
                 always {
-                    publishHTML([reportDir: '.', reportFiles: 'zap_report.html', reportName: 'Reporte DAST'])
+                    publishHTML([
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'zap_report.html',
+                        reportName: 'Reporte DAST'
+                    ])
                 }
             }
         }
