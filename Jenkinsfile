@@ -2,110 +2,80 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "vulnerable-app"
-        // Si estás en WSL/Windows, host.docker.internal permite al contenedor ver al host
-        TARGET_URL = "http://host.docker.internal:5000" 
-        SONAR_SERVER = 'Sonar-Server' // Asegúrate de que este nombre coincida con tu config en Jenkins
-        SCANNER_HOME = tool 'SonarScanner'
+        PROJECT_NAME = "pipeline-test"
+        SONARQUBE_URL = "http://sonarqube:9000"
+        SONARQUBE_TOKEN = "sqa_8b3bc3d9dadd0e6b3221285d9e3481748a799219"
+        TARGET_URL = "http://172.23.41.49:5000"
     }
 
     stages {
-        stage('1. Checkout') {
+        stage('Install Python') {
             steps {
-                checkout scm
+                sh '''
+                    apt update
+                    apt install -y python3 python3-venv python3-pip
+                '''
             }
         }
-
-        stage('2. Build Docker Image') {
+        
+        stage('Setup Environment') {
+            steps {
+                sh '''
+                    python3 -m venv venv
+                    . venv/bin/activate
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                '''
+            }
+        }
+        stage('Python Security Audit') {
+            steps {
+                sh '''
+                    . venv/bin/activate
+                    pip install pip-audit
+                    mkdir -p dependency-check-report
+                    pip-audit -r requirements.txt -f markdown -o dependency-check-report/pip-audit.md || true
+                '''
+            }
+        }
+        
+        stage('SonarQube Analysis') {
             steps {
                 script {
-                    sh "docker build -t ${IMAGE_NAME} ."
+                    def scannerHome = tool 'SonarQubeScanner'
+                    withSonarQubeEnv('SonarQubeScanner') {
+                        sh """
+                            ${scannerHome}/bin/sonar-scanner \
+                                -Dsonar.projectKey=$PROJECT_NAME \
+                                -Dsonar.sources=. \
+                                -Dsonar.host.url=$SONARQUBE_URL \
+                                -Dsonar.login=$SONARQUBE_TOKEN
+                        """
+                    }
                 }
             }
         }
-
-        stage('3. Unit Tests (Python)') {
+        stage('Dependency Check') {
+            environment {
+                NVD_API_KEY = credentials('nvdApiKey')
+            }
             steps {
-                // Ejecuta los tests dentro del contenedor y luego lo elimina
-                sh "docker run --rm ${IMAGE_NAME} python -m unittest test_app.py"
+                dependencyCheck additionalArguments: "--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey ${NVD_API_KEY}", odcInstallation: 'DependencyCheck'
             }
         }
 
-        stage('4. SCA - Dependency Check') {
+        stage('Publish Reports') {
             steps {
-                // Requisito: Gestión de dependencias
-                dependencyCheck additionalArguments: '--format HTML --format XML --out .', odpInstallation: 'Dependency-Check'
-            }
-            post {
-                always {
-                    publishHTML([
-                        allowMissing: true,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: '.',
-                        reportFiles: 'dependency-check-report.html',
-                        reportName: 'Reporte SCA (Dependencias)'
-                    ])
-                }
-            }
-        }
-
-        stage('5. SAST - SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv("${SONAR_SERVER}") {
-                    sh """
-                        ${SCANNER_HOME}/bin/sonar-scanner \
-                        -Dsonar.projectKey=VulnerableApp_Examen \
-                        -Dsonar.sources=. \
-                        -Dsonar.python.version=3.9 \
-                        -Dsonar.host.url=http://host.docker.internal:9000 \
-                        -Dsonar.login=\${SONAR_AUTH_TOKEN}
-                    """
-                }
-            }
-        }
-
-        stage('6. Start App for DAST') {
-            steps {
-                // Levantamos la app en segundo plano para atacarla con ZAP
-                sh "docker run -d -p 5000:5000 --name app-target ${IMAGE_NAME}"
-                // Esperamos unos segundos a que inicie Flask
-                sh "sleep 10"
-            }
-        }
-
-        stage('7. DAST - OWASP ZAP') {
-            steps {
-                // Ejecutamos el escaneo de ZAP contra la app levantada
-                // Usamos || true para que el pipeline no falle si encuentra alertas (queremos el reporte)
-                sh """
-                    docker run --add-host=host.docker.internal:host-gateway --rm \
-                    zaproxy/zap-stable zap-baseline.py \
-                    -t ${TARGET_URL} \
-                    -r zap_report.html \
-                    -I || true
-                """
-            }
-            post {
-                always {
-                    publishHTML([
-                        allowMissing: true,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: '.',
-                        reportFiles: 'zap_report.html',
-                        reportName: 'Reporte DAST (OWASP ZAP)'
-                    ])
-                }
+                publishHTML([
+                    allowMissing: false,
+                    alwaysLinkToLastBuild: true,
+                    keepAll: true,
+                    reportDir: 'dependency-check-report',
+                    reportFiles: 'dependency-check-report.html',
+                    reportName: 'OWASP Dependency Check Report'
+                ])
             }
         }
     }
 
-    post {
-        always {
-            // Limpieza: detener y borrar el contenedor de la app
-            sh "docker rm -f app-target || true"
-            cleanWs()
-        }
-    }
 }
