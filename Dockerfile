@@ -1,18 +1,18 @@
-# Usamos Python ligero compatible con Mac M3
+# Usamos Python ligero
 FROM python:3.9-slim
 
 WORKDIR /app
 
-# Copiamos las dependencias
+# Copiamos primero los requirements para aprovechar caché de Docker
 COPY requirements.txt .
 
-# Instalamos dependencias (Punto clave de evaluación)
+# Instalamos dependencias sin caché para reducir tamaño
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiamos el código fuente
+# Copiamos el resto del código (incluyendo vulnerable_app.py y test_app.py)
 COPY . .
 
-# Exponemos el puerto
+# Exponemos el puerto de Flask
 EXPOSE 5000
 
 # Ejecutamos la app
