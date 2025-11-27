@@ -1,8 +1,12 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'python:3.10'
+            args '-u root:root'   // Para poder usar Docker dentro
+        }
+    }
 
     environment {
-        // Nombre correcto según tu app
         IMAGE_NAME = "vulnerable-app"
         TARGET_URL = "http://host.docker.internal:5000"
         SONAR_SERVER = 'Sonar-Server'
@@ -10,16 +14,13 @@ pipeline {
 
     stages {
 
-        stage('Install Python') {
+        stage('1. Checkout') {
             steps {
-                sh '''
-                    apt update
-                    apt install -y python3 python3-venv python3-pip
-                '''
+                checkout scm
             }
         }
 
-        stage('Setup Environment') {
+        stage('2. Setup Python Environment') {
             steps {
                 sh '''
                     python3 -m venv venv
@@ -30,16 +31,8 @@ pipeline {
             }
         }
 
-        stage('1. Checkout') {
+        stage('3. Build & Unit Tests') {
             steps {
-                echo "Descargando código..."
-                checkout scm
-            }
-        }
-
-        stage('2. Build & Unit Tests') {
-            steps {
-                echo "Construyendo imagen vulnerable y ejecutando tests..."
                 sh """
                     docker build -t ${IMAGE_NAME} .
                     docker run --rm ${IMAGE_NAME} python3 -m unittest test_app.py
@@ -47,53 +40,43 @@ pipeline {
             }
         }
 
-        stage('3. Análisis Estático (SonarQube)') {
+        stage('4. Static Analysis (SonarQube)') {
             steps {
                 script {
                     def scannerHome = tool 'SonarScanner'
                     withSonarQubeEnv("${SONAR_SERVER}") {
                         sh """
                             ${scannerHome}/bin/sonar-scanner \
-                            -Dsonar.projectKey=ProyectoMacM3 \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=http://host.docker.internal:9000 \
-                            -Dsonar.login=${SONAR_AUTH_TOKEN}
+                                -Dsonar.projectKey=ProyectoMacM3 \
+                                -Dsonar.sources=. \
+                                -Dsonar.host.url=http://host.docker.internal:9000 \
+                                -Dsonar.login=${SONAR_AUTH_TOKEN}
                         """
                     }
                 }
             }
         }
 
-        stage('4. Análisis de Dependencias (SCA)') {
+        stage('5. Dependency Check (SCA)') {
             steps {
-                echo "Buscando librerías vulnerables..."
                 dependencyCheck additionalArguments: '--format HTML --format XML', odcInstallation: 'DP-Check'
             }
             post {
                 always {
-                    publishHTML([
-                        allowMissing: true,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: '',
-                        reportFiles: 'dependency-check-report.html',
-                        reportName: 'Reporte SCA (Dependencias)'
-                    ])
+                    publishHTML([reportDir: '', reportFiles: 'dependency-check-report.html', reportName: 'Reporte SCA'])
                 }
             }
         }
 
-        stage('5. Despliegue Temporal (Para DAST)') {
+        stage('6. Start Vulnerable App (for DAST)') {
             steps {
-                echo "Levantando vulnerable_app temporalmente..."
                 sh "docker run -d -p 5000:5000 --name app-target ${IMAGE_NAME}"
                 sh "sleep 10"
             }
         }
 
-        stage('6. Análisis Dinámico (OWASP ZAP)') {
+        stage('7. OWASP ZAP DAST') {
             steps {
-                echo "Ejecutando ZAP sobre la app vulnerable..."
                 sh """
                     docker run --add-host=host.docker.internal:host-gateway --rm \
                     zaproxy/zap-stable zap-baseline.py \
@@ -104,14 +87,7 @@ pipeline {
             }
             post {
                 always {
-                    publishHTML([
-                        allowMissing: true,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: '.',
-                        reportFiles: 'zap_report.html',
-                        reportName: 'Reporte DAST (ZAP)'
-                    ])
+                    publishHTML([reportDir: '.', reportFiles: 'zap_report.html', reportName: 'Reporte DAST'])
                 }
             }
         }
@@ -119,7 +95,6 @@ pipeline {
 
     post {
         always {
-            echo "Limpieza final..."
             sh "docker rm -f app-target || true"
         }
     }
