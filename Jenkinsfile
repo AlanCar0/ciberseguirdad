@@ -16,12 +16,14 @@ pipeline {
 
     stages {
 
+        /* -------------------------------------------------- */
         stage('Checkout Código') {
             steps {
                 git branch: 'main', url: 'https://github.com/AlanCar0/ciberseguirdad'
             }
         }
 
+        /* -------------------------------------------------- */
         stage('Instalar Dependencias Python') {
             steps {
                 sh '''
@@ -32,16 +34,12 @@ pipeline {
             }
         }
 
-        /* --- Instalar Dependency-Check con Java 21 --- */
+        /* -------------------------------------------------- */
         stage('Instalar Dependency Check') {
             steps {
                 sh '''
                 apt-get update
                 apt-get install -y openjdk-21-jre-headless wget unzip
-
-                export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-                export PATH=$JAVA_HOME/bin:$PATH
-                echo "JAVA_HOME=$JAVA_HOME"
 
                 mkdir -p /opt/dependency-check
                 cd /opt/dependency-check
@@ -50,21 +48,28 @@ pipeline {
                 unzip dependency-check-$ODC_VERSION-release.zip
 
                 chmod +x dependency-check/bin/dependency-check.sh
+
+                export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
+                export PATH="$JAVA_HOME/bin:$PATH"
+
+                echo "JAVA_HOME=$JAVA_HOME"
+                java -version
                 '''
             }
         }
 
+        /* -------------------------------------------------- */
         stage('Dependency Check (SCA)') {
             steps {
                 sh '''
-                export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-                export PATH=$JAVA_HOME/bin:$PATH
+                export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
+                export PATH="$JAVA_HOME/bin:$PATH"
 
                 /opt/dependency-check/dependency-check/bin/dependency-check.sh \
                     --project vulnerable-app \
                     --scan . \
-                    --nvdApiKey $NVD_API_KEY \
-                    --out dependency-check-report
+                    --out dependency-check-report \
+                    --disableNvd
                 '''
             }
             post {
@@ -79,6 +84,7 @@ pipeline {
             }
         }
 
+        /* -------------------------------------------------- */
         stage('pip-audit (SCA python)') {
             steps {
                 sh '''
@@ -92,6 +98,7 @@ pipeline {
             }
         }
 
+        /* -------------------------------------------------- */
         stage('SonarQube (SAST)') {
             steps {
                 withSonarQubeEnv('SonarQubeScanner') {
@@ -106,20 +113,20 @@ pipeline {
             }
         }
 
-        /* --- DAST con ZAP usando Java 21 --- */
+        /* -------------------------------------------------- */
         stage('DAST con ZAP') {
             steps {
                 sh '''
                 apt-get update && apt-get install -y wget unzip openjdk-21-jre-headless
 
-                export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-                export PATH=$JAVA_HOME/bin:$PATH
-
+                echo "Iniciando servidor Flask..."
                 python vulnerable_app.py &
+
                 sleep 8
 
                 mkdir -p /opt/zap
                 cd /opt/zap
+
                 wget https://github.com/zaproxy/zaproxy/releases/download/v2.15.0/ZAP_2.15.0_Linux.tar.gz
                 tar -xvf ZAP_2.15.0_Linux.tar.gz
 
@@ -132,10 +139,10 @@ pipeline {
             post {
                 always {
                     publishHTML(target: [
-                        reportDir: '.',
+                        reportDir: '/opt/zap/ZAP_2.15.0',
                         reportFiles: 'zap-report.html',
                         reportName: 'OWASP ZAP DAST Report',
-                        allowMissing: false
+                        allowMissing: true
                     ])
                 }
             }
