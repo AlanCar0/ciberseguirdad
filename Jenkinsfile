@@ -1,9 +1,14 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'python:3.10'
+            args '-u root:root'
+        }
+    }
 
     environment {
-        SONARQUBE_TOKEN = credentials('SonarScannerQube')
-        NVD_API_KEY     = credentials('nvdApiKey')
+        SONARQUBE_TOKEN = credentials('sqa_8273721775faa26d5276c855a8264c7328ce8fe1')
+        NVD_API_KEY     = credentials('NVD_API_KEY')
         TARGET_URL      = "http://127.0.0.1:5000/"
     }
 
@@ -19,7 +24,7 @@ pipeline {
             steps {
                 sh '''
                 python3 -m venv .venv
-                source .venv/bin/activate
+                . .venv/bin/activate
                 pip install --upgrade pip
                 pip install -r requirements.txt
                 pip install pip-audit
@@ -27,9 +32,6 @@ pipeline {
             }
         }
 
-        // =====================================================
-        // 🔥 ANÁLISIS DE DEPENDENCIAS — DEPENDENCY CHECK
-        // =====================================================
         stage('Dependency-Check') {
             steps {
                 sh '''
@@ -54,13 +56,10 @@ pipeline {
             }
         }
 
-        // =====================================================
-        // 🧬 Seguridad de paquetes Python — pip-audit
-        // =====================================================
         stage('pip-audit') {
             steps {
                 sh '''
-                source .venv/bin/activate
+                . .venv/bin/activate
                 pip-audit -r requirements.txt -f json > audit.json
                 '''
             }
@@ -71,9 +70,6 @@ pipeline {
             }
         }
 
-        // =====================================================
-        // 🔎 ANÁLISIS ESTÁTICO — SONARQUBE
-        // =====================================================
         stage('SonarQube Scanner') {
             steps {
                 withSonarQubeEnv('SonarQubeScanner') {
