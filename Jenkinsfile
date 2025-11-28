@@ -2,80 +2,81 @@ pipeline {
     agent any
 
     environment {
-        PROJECT_NAME = "pipeline-test"
-        SONARQUBE_URL = "http://sonarqube:9000"
-        SONARQUBE_TOKEN = "sqa_8b3bc3d9dadd0e6b3221285d9e3481748a799219"
-        TARGET_URL = "http://172.23.41.49:5000"
+        SONARQUBE_TOKEN = credentials('sonarQubeToken')
+        NVD_API_KEY     = credentials('nvdApiKey')
+        TARGET_URL      = "http://localhost:8080"   // IMPORTANTE!
     }
 
     stages {
-        stage('Install Python') {
+
+        stage('Checkout Código') {
+            steps {
+                git branch: 'main', url: 'https://github.com/AlanCar0/ciberseguirdad'
+            }
+        }
+
+        stage('Instalar Python + dependencias') {
             steps {
                 sh '''
-                    apt update
-                    apt install -y python3 python3-venv python3-pip
+                python3 -m venv .venv
+                source .venv/bin/activate
+                pip install -r requirements.txt
+                pip install pip-audit
                 '''
             }
         }
-        
-        stage('Setup Environment') {
+
+        // 🔥 ANÁLISIS DE SEGURIDAD
+        stage('Dependency-Check') {
             steps {
                 sh '''
-                    python3 -m venv venv
-                    . venv/bin/activate
-                    pip install --upgrade pip
-                    pip install -r requirements.txt
+                dependency-check.sh \
+                --project vulnerable-app \
+                --scan . \
+                --nvdApiKey $NVD_API_KEY \
+                --out dependency-check-report
                 '''
             }
-        }
-        stage('Python Security Audit') {
-            steps {
-                sh '''
-                    . venv/bin/activate
-                    pip install pip-audit
-                    mkdir -p dependency-check-report
-                    pip-audit -r requirements.txt -f markdown -o dependency-check-report/pip-audit.md || true
-                '''
-            }
-        }
-        
-        stage('SonarQube Analysis') {
-            steps {
-                script {
-                    def scannerHome = tool 'SonarQubeScanner'
-                    withSonarQubeEnv('SonarQubeScanner') {
-                        sh """
-                            ${scannerHome}/bin/sonar-scanner \
-                                -Dsonar.projectKey=$PROJECT_NAME \
-                                -Dsonar.sources=. \
-                                -Dsonar.host.url=$SONARQUBE_URL \
-                                -Dsonar.login=$SONARQUBE_TOKEN
-                        """
-                    }
+            post {
+                success {
+                    publishHTML([
+                        reportDir: 'dependency-check-report',
+                        reportFiles: 'dependency-check-report.html',
+                        reportName: 'Dependency Security Report'
+                    ])
                 }
             }
         }
-        stage('Dependency Check') {
-            environment {
-                NVD_API_KEY = credentials('nvdApiKey')
-            }
+
+        // 🧬 Auditoría Seguridad PIP
+        stage('pip-audit') {
             steps {
-                dependencyCheck additionalArguments: "--scan . --format HTML --out dependency-check-report --enableExperimental --enableRetired --nvdApiKey ${NVD_API_KEY}", odcInstallation: 'DependencyCheck'
+                sh '''
+                source .venv/bin/activate
+                pip-audit -r requirements.txt -f json > audit.json
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'audit.json'
+                }
             }
         }
 
-        stage('Publish Reports') {
+
+        // 📡 Análisis SAST con SonarQube
+        stage('SonarQube Scanner') {
             steps {
-                publishHTML([
-                    allowMissing: false,
-                    alwaysLinkToLastBuild: true,
-                    keepAll: true,
-                    reportDir: 'dependency-check-report',
-                    reportFiles: 'dependency-check-report.html',
-                    reportName: 'OWASP Dependency Check Report'
-                ])
+                withSonarQubeEnv('SonarQubeScanner') {
+                    sh """
+                    sonar-scanner \
+                    -Dsonar.projectKey=vulnerable-app \
+                    -Dsonar.sources=. \
+                    -Dsonar.host.url=http://sonarqube:9000 \
+                    -Dsonar.login=$SONARQUBE_TOKEN
+                    """
+                }
             }
         }
     }
-
 }
