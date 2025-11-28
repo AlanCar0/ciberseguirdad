@@ -16,18 +16,12 @@ pipeline {
 
     stages {
 
-        /* -------------------------------
-         * 1) Checkout del código
-         * ------------------------------- */
         stage('Checkout Código') {
             steps {
                 git branch: 'main', url: 'https://github.com/AlanCar0/ciberseguirdad'
             }
         }
 
-        /* -------------------------------
-         * 2) Instalar dependencias Python
-         * ------------------------------- */
         stage('Instalar Dependencias Python') {
             steps {
                 sh '''
@@ -38,22 +32,17 @@ pipeline {
             }
         }
 
-        /* -------------------------------
-         * 3) Instalar Dependency Check (requiere Java)
-         * ------------------------------- */
+        /* --- Instalar Dependency-Check con Java 21 --- */
         stage('Instalar Dependency Check') {
             steps {
                 sh '''
-                # Instalar Java 17
                 apt-get update
-                apt-get install -y openjdk-17-jre-headless wget unzip
+                apt-get install -y openjdk-21-jre-headless wget unzip
 
-                # Configurar JAVA_HOME
                 export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
                 export PATH=$JAVA_HOME/bin:$PATH
                 echo "JAVA_HOME=$JAVA_HOME"
 
-                # Instalar Dependency-Check CLI
                 mkdir -p /opt/dependency-check
                 cd /opt/dependency-check
 
@@ -65,9 +54,6 @@ pipeline {
             }
         }
 
-        /* -------------------------------
-         * 4) Dependency Check (SCA)
-         * ------------------------------- */
         stage('Dependency Check (SCA)') {
             steps {
                 sh '''
@@ -93,9 +79,6 @@ pipeline {
             }
         }
 
-        /* -------------------------------
-         * 5) pip-audit (SCA Python)
-         * ------------------------------- */
         stage('pip-audit (SCA python)') {
             steps {
                 sh '''
@@ -109,9 +92,6 @@ pipeline {
             }
         }
 
-        /* -------------------------------
-         * 6) SonarQube (SAST)
-         * ------------------------------- */
         stage('SonarQube (SAST)') {
             steps {
                 withSonarQubeEnv('SonarQubeScanner') {
@@ -126,29 +106,23 @@ pipeline {
             }
         }
 
-        /* -------------------------------
-         * 7) DAST con OWASP ZAP
-         * ------------------------------- */
+        /* --- DAST con ZAP usando Java 21 --- */
         stage('DAST con ZAP') {
             steps {
                 sh '''
-                # Instalar Java y herramientas necesarias para ZAP
-                apt-get update && apt-get install -y wget unzip openjdk-17-jre-headless
+                apt-get update && apt-get install -y wget unzip openjdk-21-jre-headless
 
                 export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
                 export PATH=$JAVA_HOME/bin:$PATH
 
-                # Levantar el servidor Flask vulnerable
                 python vulnerable_app.py &
                 sleep 8
 
-                # Descargar ZAP
                 mkdir -p /opt/zap
                 cd /opt/zap
                 wget https://github.com/zaproxy/zaproxy/releases/download/v2.15.0/ZAP_2.15.0_Linux.tar.gz
                 tar -xvf ZAP_2.15.0_Linux.tar.gz
 
-                # Ejecutar ZAP Full Scan
                 /opt/zap/ZAP_2.15.0/zap.sh \
                     -cmd \
                     -quickurl $TARGET_URL \
@@ -166,6 +140,5 @@ pipeline {
                 }
             }
         }
-
     }
 }
