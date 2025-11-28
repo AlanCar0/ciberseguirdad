@@ -60,10 +60,11 @@ stage('Dependency Check (SCA)') {
         sh '''
         set +e
         /opt/dependency-check/dependency-check/bin/dependency-check.sh \
-            --project vulnerable-app \
-            --scan . \
-            --out dependency-check-report \
-            --nvdApiKey $NVD_API_KEY
+    --project vulnerable-app \
+    --scan . \
+    --out dependency-check-report \
+    --disableAssembly \
+    --nvdApiKey $NVD_API_KEY
         EXIT_CODE=$?
         if [ $EXIT_CODE -ne 0 ]; then
             echo "WARNING: Dependency-Check falló, continuando con pipeline..."
