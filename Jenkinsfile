@@ -60,29 +60,29 @@ pipeline {
 
         /* -------------------------------------------------- */
         stage('Dependency Check (SCA)') {
-            steps {
-                sh '''
-                export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
-                export PATH="$JAVA_HOME/bin:$PATH"
+    steps {
+        sh '''
+        export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
+        export PATH="$JAVA_HOME/bin:$PATH"
 
-                /opt/dependency-check/dependency-check/bin/dependency-check.sh \
-                    --project vulnerable-app \
-                    --scan . \
-                    --out dependency-check-report \
-                    --disableNvd
-                '''
-            }
-            post {
-                always {
-                    publishHTML(target: [
-                        reportDir: 'dependency-check-report',
-                        reportFiles: 'dependency-check-report.html',
-                        reportName: 'Dependency Security Report',
-                        allowMissing: true
-                    ])
-                }
-            }
+        /opt/dependency-check/dependency-check/bin/dependency-check.sh \
+            --project vulnerable-app \
+            --scan . \
+            --noupdate \
+            --out dependency-check-report
+        '''
+    }
+    post {
+        always {
+            publishHTML(target: [
+                reportDir: 'dependency-check-report',
+                reportFiles: 'dependency-check-report.html',
+                reportName: 'Dependency Security Report',
+                allowMissing: true
+            ])
         }
+    }
+}
 
         /* -------------------------------------------------- */
         stage('pip-audit (SCA python)') {
