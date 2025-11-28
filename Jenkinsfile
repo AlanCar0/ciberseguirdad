@@ -1,28 +1,26 @@
 pipeline {
 
-    agent {
-        docker {
-            image 'python:3.10-bullseye'
-            args '-u root:root'
-        }
-    }
+    agent none   // declaramos none para usar distintos contenedores
 
     environment {
         SONARQUBE_TOKEN = credentials('SonarScannerQube')
         NVD_API_KEY     = credentials('nvdApiKey')
         TARGET_URL      = "http://127.0.0.1:5000"
-        ODC_VERSION     = "10.0.3"
     }
 
     stages {
 
+        /* ---------- CHECKOUT ---------- */
         stage('Checkout Código') {
+            agent { docker { image 'python:3.10-bullseye' } }
             steps {
                 git branch: 'main', url: 'https://github.com/AlanCar0/ciberseguirdad'
             }
         }
 
+        /* ---------- DEPENDENCIAS PYTHON ---------- */
         stage('Instalar Dependencias Python') {
+            agent { docker { image 'python:3.10-bullseye' } }
             steps {
                 sh '''
                 pip install --upgrade pip
@@ -32,28 +30,22 @@ pipeline {
             }
         }
 
-        stage('Instalar Dependency-Check') {
-            steps {
-                sh '''
-                mkdir -p /opt/dependency-check
-                cd /opt/dependency-check
-
-                wget https://github.com/jeremylong/DependencyCheck/releases/download/v$ODC_VERSION/dependency-check-$ODC_VERSION-release.zip
-                apt-get update && apt-get install -y unzip
-                unzip dependency-check-$ODC_VERSION-release.zip
-                chmod +x dependency-check/bin/dependency-check.sh
-                '''
-            }
-        }
-
+        /* ---------- DEPENDENCY CHECK (IMAGEN OFICIAL) ---------- */
         stage('Dependency-Check') {
+            agent {
+                docker {
+                    image 'owasp/dependency-check:latest'
+                    args "-v ${WORKSPACE}:/src"      // monta tu proyecto dentro del contenedor
+                }
+            }
             steps {
                 sh '''
-                /opt/dependency-check/dependency-check/bin/dependency-check.sh \
+                dependency-check.sh \
                     --project vulnerable-app \
-                    --scan . \
+                    --scan /src \
                     --nvdApiKey $NVD_API_KEY \
-                    --out dependency-check-report
+                    --out /src/dependency-check-report \
+                    --format HTML
                 '''
             }
             post {
@@ -63,14 +55,15 @@ pipeline {
                         reportFiles: 'dependency-check-report.html',
                         reportName: 'Dependency Security Report',
                         allowMissing: true,
-                        keepAll: true,
-                        alwaysLinkToLastBuild: true
+                        keepAll: true
                     ])
                 }
             }
         }
 
+        /* ---------- PIP AUDIT ---------- */
         stage('pip-audit') {
+            agent { docker { image 'python:3.10-bullseye' } }
             steps {
                 sh '''
                 pip-audit -r requirements.txt -f json > audit.json
@@ -83,13 +76,15 @@ pipeline {
             }
         }
 
+        /* ---------- SONARQUBE ---------- */
         stage('SonarQube Scanner') {
+            agent { docker { image 'sonarsource/sonar-scanner-cli:latest' } }
             steps {
                 withSonarQubeEnv('SonarQubeScanner') {
                     sh """
                     sonar-scanner \
                         -Dsonar.projectKey=vulnerable-app \
-                        -Dsonar.sources=. \
+                        -Dsonar.sources=/usr/src \
                         -Dsonar.host.url=http://sonarqube:9000 \
                         -Dsonar.login=$SONARQUBE_TOKEN
                     """
@@ -97,32 +92,31 @@ pipeline {
             }
         }
 
-
-        /*                  ZAP                    */
-  
+        /* ---------- OWASP ZAP ---------- */
         stage('OWASP ZAP DAST Scan') {
+            agent { docker { image 'python:3.10-bullseye' } }
             steps {
                 sh '''
-                echo "Iniciando servidor Flask..."
+                echo "Levantando servidor Flask..."
                 python vulnerable_app.py &
 
-                echo "Esperando a que el servidor levante..."
+                echo "Esperando que Flask levante..."
                 sleep 8
 
-                echo "Descargando OWASP ZAP..."
                 apt-get update && apt-get install -y wget unzip openjdk-17-jre
 
+                echo "Descargando ZAP..."
                 mkdir -p /opt/zap
                 cd /opt/zap
 
                 wget https://github.com/zaproxy/zaproxy/releases/download/v2.15.0/ZAP_2.15.0_Linux.tar.gz
                 tar -xvf ZAP_2.15.0_Linux.tar.gz
 
-                echo "Ejecutando ZAP CLI Full Scan..."
+                echo "Corriendo escaneo ZAP..."
                 /opt/zap/ZAP_2.15.0/zap.sh \
                     -cmd \
                     -quickurl $TARGET_URL \
-                    -quickout /var/jenkins_home/workspace/Pipeline-test/zap-report.html
+                    -quickout $WORKSPACE/zap-report.html
                 '''
             }
             post {
@@ -130,10 +124,7 @@ pipeline {
                     publishHTML(target: [
                         reportDir: '.',
                         reportFiles: 'zap-report.html',
-                        reportName: 'OWASP ZAP DAST Report',
-                        allowMissing: false,
-                        keepAll: true,
-                        alwaysLinkToLastBuild: true
+                        reportName: 'OWASP ZAP DAST Report'
                     ])
                 }
             }
