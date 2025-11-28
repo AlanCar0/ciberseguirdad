@@ -20,15 +20,18 @@ pipeline {
 
         /* ---------- DEPENDENCIAS PYTHON ---------- */
         stage('Instalar Dependencias Python') {
-            agent { docker { image 'python:3.10-bullseye' } }
-            steps {
-                sh '''
-                pip install --upgrade pip
-                pip install -r requirements.txt
-                pip install pip-audit
-                '''
-            }
-        }
+    agent { docker { image 'python:3.10-bullseye' } }
+    steps {
+        sh '''
+        python3 -m venv venv
+        . venv/bin/activate
+
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pip-audit
+        '''
+    }
+}
 
         /* ---------- DEPENDENCY CHECK (IMAGEN OFICIAL) ---------- */
         stage('Dependency-Check') {
