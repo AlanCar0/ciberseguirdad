@@ -1,10 +1,6 @@
 pipeline {
-    agent {
-        docker {
-            image 'python:3.10-bullseye'
-            args '-u root:root'
-        }
-    }
+
+    agent any   // ⬅️ NO usamos Docker dentro de Docker
 
     environment {
         SONARQUBE_TOKEN = credentials('SonarScannerQube')
@@ -14,20 +10,27 @@ pipeline {
 
     stages {
 
+        stage('Actualizar sistema + instalar Python') {
+            steps {
+                sh '''
+                apt-get update
+                apt-get install -y python3 python3-pip python3-venv
+                '''
+            }
+        }
+
         stage('Checkout Código') {
             steps {
                 git branch: 'main', url: 'https://github.com/AlanCar0/ciberseguirdad'
             }
         }
 
-        stage('Instalar Python + dependencias') {
+        stage('Instalar dependencias') {
             steps {
                 sh '''
-                python3 -m venv .venv
-                . .venv/bin/activate
-                pip install --upgrade pip
-                pip install -r requirements.txt
-                pip install pip-audit
+                pip3 install --upgrade pip
+                pip3 install -r requirements.txt
+                pip3 install pip-audit
                 '''
             }
         }
@@ -59,7 +62,6 @@ pipeline {
         stage('pip-audit') {
             steps {
                 sh '''
-                . .venv/bin/activate
                 pip-audit -r requirements.txt -f json > audit.json
                 '''
             }
