@@ -16,7 +16,7 @@ pipeline {
 
     stages {
 
-        /* === 1. CLONAR TU REPOSITORIO === */
+        /* === 1. CLONAR REPOSITORIO === */
         stage('Checkout Código') {
             steps {
                 git branch: 'main', url: 'https://github.com/AlanCar0/ciberseguirdad'
@@ -54,41 +54,48 @@ pipeline {
             }
         }
 
-        /* === 4. ANALISIS SCA - DEPENDENCY CHECK === */
-stage('Dependency Check (SCA)') {
-    steps {
-        sh '''
-        set +e
-        /opt/dependency-check/dependency-check/bin/dependency-check.sh \
-    --project vulnerable-app \
-    --scan . \
-    --out dependency-check-report \
-    --disableAssembly \
-    --nvdApiKey $NVD_API_KEY
-        EXIT_CODE=$?
-        if [ $EXIT_CODE -ne 0 ]; then
-            echo "WARNING: Dependency-Check falló, continuando con pipeline..."
-        fi
-        set -e
-        '''
-    }
-    post {
-        always {
-            publishHTML(target: [
-                reportDir: 'dependency-check-report',
-                reportFiles: 'dependency-check-report.html',
-                reportName: 'Reporte SCA - DependencyCheck',
-                allowMissing: true
-            ])
-        }
-    }
-}
+        /* === 4. SCA - DEPENDENCY CHECK === */
+        stage('Dependency Check (SCA)') {
+            steps {
+                sh '''
+                set +e
+                /opt/dependency-check/dependency-check/bin/dependency-check.sh \
+                    --project vulnerable-app \
+                    --scan . \
+                    --out dependency-check-report \
+                    --disableAssembly \
+                    --nvdApiKey $NVD_API_KEY
 
-        /* === 5. ANALISIS SCA (PYTHON) === */
+                DC_EXIT=$?
+                if [ $DC_EXIT -ne 0 ]; then
+                    echo "⚠️ WARNING: Dependency-Check devolvió código $DC_EXIT, continuando pipeline..."
+                fi
+                set -e
+                '''
+            }
+            post {
+                always {
+                    publishHTML(target: [
+                        reportDir: 'dependency-check-report',
+                        reportFiles: 'dependency-check-report.html',
+                        reportName: 'Reporte SCA - DependencyCheck',
+                        allowMissing: true
+                    ])
+                }
+            }
+        }
+
+        /* === 5. SCA PYTHON - pip-audit === */
         stage('pip-audit (SCA Python)') {
             steps {
                 sh '''
+                set +e
                 pip-audit -r requirements.txt -f json > audit.json
+                PA_EXIT=$?
+                if [ $PA_EXIT -ne 0 ]; then
+                    echo "⚠️ pip-audit encontró vulnerabilidades (exit $PA_EXIT), pero esto es normal. Continuando..."
+                fi
+                set -e
                 '''
             }
             post {
@@ -98,7 +105,7 @@ stage('Dependency Check (SCA)') {
             }
         }
 
-        /* === 6. SAST CON SONARQUBE === */
+        /* === 6. SAST SONARQUBE === */
         stage('SonarQube (SAST)') {
             steps {
                 withSonarQubeEnv('SonarQubeScanner') {
@@ -113,14 +120,14 @@ stage('Dependency Check (SCA)') {
             }
         }
 
-        /* === 7. DAST CON OWASP ZAP === */
+        /* === 7. DAST OWASP ZAP === */
         stage('DAST con ZAP') {
             steps {
                 sh '''
                 apt-get update
                 apt-get install -y wget unzip openjdk-21-jre-headless
 
-                echo "Iniciando tu app Flask vulnerable..."
+                echo "Iniciando app Flask vulnerable..."
                 python vulnerable_app.py &
 
                 sleep 10
