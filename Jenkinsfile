@@ -16,14 +16,14 @@ pipeline {
 
     stages {
 
-        /* -------------------------------------------------- */
+        /* === 1. CLONAR TU REPOSITORIO === */
         stage('Checkout Código') {
             steps {
                 git branch: 'main', url: 'https://github.com/AlanCar0/ciberseguirdad'
             }
         }
 
-        /* -------------------------------------------------- */
+        /* === 2. DEPENDENCIAS PYTHON === */
         stage('Instalar Dependencias Python') {
             steps {
                 sh '''
@@ -34,58 +34,54 @@ pipeline {
             }
         }
 
-        /* -------------------------------------------------- */
+        /* === 3. INSTALAR DEPENDENCY-CHECK === */
         stage('Instalar Dependency Check') {
             steps {
                 sh '''
                 apt-get update
                 apt-get install -y openjdk-21-jre-headless wget unzip
 
+                export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
+                export PATH="$JAVA_HOME/bin:$PATH"
+
                 mkdir -p /opt/dependency-check
                 cd /opt/dependency-check
 
                 wget https://github.com/jeremylong/DependencyCheck/releases/download/v$ODC_VERSION/dependency-check-$ODC_VERSION-release.zip
                 unzip dependency-check-$ODC_VERSION-release.zip
-
                 chmod +x dependency-check/bin/dependency-check.sh
-
-                export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
-                export PATH="$JAVA_HOME/bin:$PATH"
-
-                echo "JAVA_HOME=$JAVA_HOME"
-                java -version
                 '''
             }
         }
 
-        /* -------------------------------------------------- */
+        /* === 4. ANALISIS SCA - DEPENDENCY CHECK === */
         stage('Dependency Check (SCA)') {
-    steps {
-        sh '''
-        export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
-        export PATH="$JAVA_HOME/bin:$PATH"
+            steps {
+                sh '''
+                export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
+                export PATH="$JAVA_HOME/bin:$PATH"
 
-        /opt/dependency-check/dependency-check/bin/dependency-check.sh \
-            --project vulnerable-app \
-            --scan . \
-            --noupdate \
-            --out dependency-check-report
-        '''
-    }
-    post {
-        always {
-            publishHTML(target: [
-                reportDir: 'dependency-check-report',
-                reportFiles: 'dependency-check-report.html',
-                reportName: 'Dependency Security Report',
-                allowMissing: true
-            ])
+                /opt/dependency-check/dependency-check/bin/dependency-check.sh \
+                    --project vulnerable-app \
+                    --scan . \
+                    --noupdate \
+                    --out dependency-check-report
+                '''
+            }
+            post {
+                always {
+                    publishHTML(target: [
+                        reportDir: 'dependency-check-report',
+                        reportFiles: 'dependency-check-report.html',
+                        reportName: 'Reporte SCA - DependencyCheck',
+                        allowMissing: true
+                    ])
+                }
+            }
         }
-    }
-}
 
-        /* -------------------------------------------------- */
-        stage('pip-audit (SCA python)') {
+        /* === 5. ANALISIS SCA (PYTHON) === */
+        stage('pip-audit (SCA Python)') {
             steps {
                 sh '''
                 pip-audit -r requirements.txt -f json > audit.json
@@ -93,12 +89,12 @@ pipeline {
             }
             post {
                 always {
-                    archiveArtifacts artifacts: 'audit.json'
+                    archiveArtifacts 'audit.json'
                 }
             }
         }
 
-        /* -------------------------------------------------- */
+        /* === 6. SAST CON SONARQUBE === */
         stage('SonarQube (SAST)') {
             steps {
                 withSonarQubeEnv('SonarQubeScanner') {
@@ -113,16 +109,17 @@ pipeline {
             }
         }
 
-        /* -------------------------------------------------- */
+        /* === 7. DAST CON OWASP ZAP === */
         stage('DAST con ZAP') {
             steps {
                 sh '''
-                apt-get update && apt-get install -y wget unzip openjdk-21-jre-headless
+                apt-get update
+                apt-get install -y wget unzip openjdk-21-jre-headless
 
-                echo "Iniciando servidor Flask..."
+                echo "Iniciando tu app Flask vulnerable..."
                 python vulnerable_app.py &
 
-                sleep 8
+                sleep 10
 
                 mkdir -p /opt/zap
                 cd /opt/zap
@@ -139,9 +136,9 @@ pipeline {
             post {
                 always {
                     publishHTML(target: [
-                        reportDir: '/opt/zap/ZAP_2.15.0',
+                        reportDir: '.',
                         reportFiles: 'zap-report.html',
-                        reportName: 'OWASP ZAP DAST Report',
+                        reportName: 'Reporte DAST - ZAP',
                         allowMissing: true
                     ])
                 }
