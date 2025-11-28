@@ -108,7 +108,7 @@ pipeline {
         /* === 6. SAST SONARQUBE === */
         stage('SonarQube (SAST)') {
             steps {
-                withSonarQubeEnv('SonarQubeScanner') {
+                withSonarQubeEnv('SonarQube') {
                     sh """
                     sonar-scanner \
                         -Dsonar.projectKey=vulnerable-app \
