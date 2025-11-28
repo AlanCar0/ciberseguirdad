@@ -1,6 +1,11 @@
 pipeline {
 
-    agent any   // ⬅️ NO usamos Docker dentro de Docker
+    agent {
+        docker {
+            image 'python:3.10-bullseye'
+            args '-u root:root'
+        }
+    }
 
     environment {
         SONARQUBE_TOKEN = credentials('SonarScannerQube')
@@ -9,15 +14,6 @@ pipeline {
     }
 
     stages {
-
-        stage('Actualizar sistema + instalar Python') {
-            steps {
-                sh '''
-                apt-get update
-                apt-get install -y python3 python3-pip python3-venv
-                '''
-            }
-        }
 
         stage('Checkout Código') {
             steps {
@@ -28,9 +24,9 @@ pipeline {
         stage('Instalar dependencias') {
             steps {
                 sh '''
-                pip3 install --upgrade pip
-                pip3 install -r requirements.txt
-                pip3 install pip-audit
+                pip install --upgrade pip
+                pip install -r requirements.txt
+                pip install pip-audit
                 '''
             }
         }
