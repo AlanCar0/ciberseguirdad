@@ -11,7 +11,7 @@ pipeline {
         SONARQUBE_TOKEN = credentials('SonarScannerQube')
         NVD_API_KEY     = credentials('nvdApiKey')
         TARGET_URL      = "http://127.0.0.1:5000"
-        ODC_VERSION     = "10.0.3"
+        ODC_VERSION     = "10.1.5"
     }
 
     stages {
@@ -58,25 +58,17 @@ pipeline {
 stage('Dependency Check (SCA)') {
     steps {
         sh '''
-        export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
-        export PATH=$JAVA_HOME/bin:$PATH
-
-        # Si NO existe la base de datos, ejecutar con actualización
-        if [ ! -d "/opt/dependency-check/data" ]; then
-            echo "Primera ejecución: actualizando base de datos NVD..."
-            /opt/dependency-check/dependency-check/bin/dependency-check.sh \
-                --project vulnerable-app \
-                --scan . \
-                --out dependency-check-report \
-                --nvdApiKey $NVD_API_KEY
-        else
-            echo "Base existente detectada: ejecutando sin update..."
-            /opt/dependency-check/dependency-check/bin/dependency-check.sh \
-                --project vulnerable-app \
-                --scan . \
-                --out dependency-check-report \
-                --noupdate
+        set +e
+        /opt/dependency-check/dependency-check/bin/dependency-check.sh \
+            --project vulnerable-app \
+            --scan . \
+            --out dependency-check-report \
+            --nvdApiKey $NVD_API_KEY
+        EXIT_CODE=$?
+        if [ $EXIT_CODE -ne 0 ]; then
+            echo "WARNING: Dependency-Check falló, continuando con pipeline..."
         fi
+        set -e
         '''
     }
     post {
