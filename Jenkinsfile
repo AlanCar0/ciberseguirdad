@@ -4,7 +4,7 @@ pipeline {
     environment {
         SONARQUBE_TOKEN = credentials('sqa_8273721775faa26d5276c855a8264c7328ce8fe1')
         NVD_API_KEY     = credentials('1d1d3028-c189-465b-951b-2abc2bf3652a')
-        TARGET_URL      = "http://localhost:8080"   // IMPORTANTE!
+        TARGET_URL      = "http://localhost:5000"   // IMPORTANTE!
     }
 
     stages {
