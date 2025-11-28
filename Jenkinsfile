@@ -11,7 +11,7 @@ pipeline {
         SONARQUBE_TOKEN = credentials('SonarScannerQube')
         NVD_API_KEY     = credentials('nvdApiKey')
         TARGET_URL      = "http://127.0.0.1:5000"
-        ODC_VERSION     = "10.1.5"
+        ODC_VERSION     = "12.1.0"
     }
 
     stages {
