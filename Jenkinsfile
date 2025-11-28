@@ -32,21 +32,27 @@ pipeline {
             }
         }
 
-        stage('Instalar Dependency Check') {
-            steps {
-                sh '''
-                mkdir -p /opt/dependency-check
-                cd /opt/dependency-check
+stage('Instalar Dependency Check') {
+    steps {
+        sh '''
+        # Instalar Java (requerido para Dependency-Check)
+        apt-get update
+        apt-get install -y openjdk-17-jre
 
-                apt-get update && apt-get install -y wget unzip
+        # Configurar JAVA_HOME (buscar la instalación automáticamente)
+        export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+        echo "JAVA_HOME=$JAVA_HOME"
 
-                wget https://github.com/jeremylong/DependencyCheck/releases/download/v$ODC_VERSION/dependency-check-$ODC_VERSION-release.zip
+        mkdir -p /opt/dependency-check
+        cd /opt/dependency-check
 
-                unzip dependency-check-$ODC_VERSION-release.zip
-                chmod +x dependency-check/bin/dependency-check.sh
-                '''
-            }
-        }
+        wget https://github.com/jeremylong/DependencyCheck/releases/download/v$ODC_VERSION/dependency-check-$ODC_VERSION-release.zip
+        apt-get install -y unzip
+        unzip dependency-check-$ODC_VERSION-release.zip
+        chmod +x dependency-check/bin/dependency-check.sh
+        '''
+    }
+}
 
         stage('Dependency Check (SCA)') {
             steps {
