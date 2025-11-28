@@ -8,7 +8,7 @@ pipeline {
 
     environment {
         SONARQUBE_TOKEN = credentials('sqa_8273721775faa26d5276c855a8264c7328ce8fe1')
-        NVD_API_KEY     = credentials('NVD_API_KEY')
+        NVD_API_KEY     = credentials('nvdApiKey')
         TARGET_URL      = "http://127.0.0.1:5000/"
     }
 
