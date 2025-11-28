@@ -16,12 +16,18 @@ pipeline {
 
     stages {
 
+        /* -------------------------------
+         * 1) Checkout del código
+         * ------------------------------- */
         stage('Checkout Código') {
             steps {
                 git branch: 'main', url: 'https://github.com/AlanCar0/ciberseguirdad'
             }
         }
 
+        /* -------------------------------
+         * 2) Instalar dependencias Python
+         * ------------------------------- */
         stage('Instalar Dependencias Python') {
             steps {
                 sh '''
@@ -32,31 +38,42 @@ pipeline {
             }
         }
 
-stage('Instalar Dependency Check') {
-    steps {
-        sh '''
-        # Instalar Java (requerido para Dependency-Check)
-        apt-get update
-        apt-get install -y openjdk-17-jre
+        /* -------------------------------
+         * 3) Instalar Dependency Check (requiere Java)
+         * ------------------------------- */
+        stage('Instalar Dependency Check') {
+            steps {
+                sh '''
+                # Instalar Java 17
+                apt-get update
+                apt-get install -y openjdk-17-jre-headless wget unzip
 
-        # Configurar JAVA_HOME (buscar la instalación automáticamente)
-        export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
-        echo "JAVA_HOME=$JAVA_HOME"
+                # Configurar JAVA_HOME
+                export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+                export PATH=$JAVA_HOME/bin:$PATH
+                echo "JAVA_HOME=$JAVA_HOME"
 
-        mkdir -p /opt/dependency-check
-        cd /opt/dependency-check
+                # Instalar Dependency-Check CLI
+                mkdir -p /opt/dependency-check
+                cd /opt/dependency-check
 
-        wget https://github.com/jeremylong/DependencyCheck/releases/download/v$ODC_VERSION/dependency-check-$ODC_VERSION-release.zip
-        apt-get install -y unzip
-        unzip dependency-check-$ODC_VERSION-release.zip
-        chmod +x dependency-check/bin/dependency-check.sh
-        '''
-    }
-}
+                wget https://github.com/jeremylong/DependencyCheck/releases/download/v$ODC_VERSION/dependency-check-$ODC_VERSION-release.zip
+                unzip dependency-check-$ODC_VERSION-release.zip
 
+                chmod +x dependency-check/bin/dependency-check.sh
+                '''
+            }
+        }
+
+        /* -------------------------------
+         * 4) Dependency Check (SCA)
+         * ------------------------------- */
         stage('Dependency Check (SCA)') {
             steps {
                 sh '''
+                export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+                export PATH=$JAVA_HOME/bin:$PATH
+
                 /opt/dependency-check/dependency-check/bin/dependency-check.sh \
                     --project vulnerable-app \
                     --scan . \
@@ -76,6 +93,9 @@ stage('Instalar Dependency Check') {
             }
         }
 
+        /* -------------------------------
+         * 5) pip-audit (SCA Python)
+         * ------------------------------- */
         stage('pip-audit (SCA python)') {
             steps {
                 sh '''
@@ -89,6 +109,9 @@ stage('Instalar Dependency Check') {
             }
         }
 
+        /* -------------------------------
+         * 6) SonarQube (SAST)
+         * ------------------------------- */
         stage('SonarQube (SAST)') {
             steps {
                 withSonarQubeEnv('SonarQubeScanner') {
@@ -103,23 +126,29 @@ stage('Instalar Dependency Check') {
             }
         }
 
+        /* -------------------------------
+         * 7) DAST con OWASP ZAP
+         * ------------------------------- */
         stage('DAST con ZAP') {
             steps {
                 sh '''
-                echo "Instalando dependencias para ZAP..."
-                apt-get update && apt-get install -y wget unzip openjdk-17-jre
+                # Instalar Java y herramientas necesarias para ZAP
+                apt-get update && apt-get install -y wget unzip openjdk-17-jre-headless
 
-                echo "Iniciando servidor Flask..."
+                export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+                export PATH=$JAVA_HOME/bin:$PATH
+
+                # Levantar el servidor Flask vulnerable
                 python vulnerable_app.py &
-
                 sleep 8
 
-                echo "Descargando ZAP..."
+                # Descargar ZAP
                 mkdir -p /opt/zap
                 cd /opt/zap
                 wget https://github.com/zaproxy/zaproxy/releases/download/v2.15.0/ZAP_2.15.0_Linux.tar.gz
                 tar -xvf ZAP_2.15.0_Linux.tar.gz
 
+                # Ejecutar ZAP Full Scan
                 /opt/zap/ZAP_2.15.0/zap.sh \
                     -cmd \
                     -quickurl $TARGET_URL \
@@ -137,5 +166,6 @@ stage('Instalar Dependency Check') {
                 }
             }
         }
+
     }
 }
